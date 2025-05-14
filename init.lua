@@ -43,12 +43,18 @@ obj._attribs = {
 	[3] = true,
 	[5] = true,
   },
+  seconds = {
+	300, 450, 600, 900
+  },
   colors = {
 	"🟥","🟨","🟩","🟦"
   },
-  seconds = {
-	300, 450, 600, 900
-  }
+  icons = {
+	"teleport.png",
+	"run.png",
+	"lego.png",
+	"work.png",
+  },
 }
 for k, v in pairs(obj._attribs) do obj[k] = v end
 
@@ -66,11 +72,11 @@ function obj:maybePoll()
 	local now = os.date("*t")
 	if not self.enabledHoursOfTheDay[now.hour] then
 		-- logger.d("Not enabled hours of the day", self.enabledHoursOfTheDay, now.hour)
-		return "I am sleeping in this hour.", "sleep.png"
+		return "I am sleeping in this hour.", "sleep.png", nil
 	end
 	if not self.enabledDays[now.wday] then
 		-- logger.d("Not enabled days", self.enabledDays, now.wday)
-		return  "I am sleeping in this day.", "sleep.png"
+		return  "I am sleeping in this day.", "sleep.png", nil
 	end
 
 	local data = poll(self.plat, self.dir, self.orig, self.key)
@@ -88,7 +94,7 @@ function obj:maybePoll()
 	end
 	if not destinationEstimate then
 		-- logger.e("No destination estimate found")
-		return "I cannot find any schedule information for this destination. Maybe it's gone. Maybe the last train is gone for today.", "poof.png"
+		return "I cannot find any schedule information for this destination. Maybe it's gone. Maybe the last train is gone for today.", "error.png", nil
 	end
 
 	-- logger.d("destinationEstimate", destinationEstimate)
@@ -100,23 +106,27 @@ function obj:maybePoll()
 
 	if #minutes == 0 then
 		-- logger.e("No minutes found")
-		return "I can find the destination but no train is coming.", "poof.png"
+		return "I can find the destination but no train is coming.", "error.png"
 	end
 
-	local color = self.colors[#self.colors]
+	if type(minutes[1]) ~= "number" then
+		logger.d("got minutes ", minutes[1], type(minutes[1]))
+	end
+
+	local icon = self.icons[#self.icons]
 	for k, v in ipairs(self.seconds) do
-		if(minutes[1]  * 60 < v) then
-			color = self.colors[k]
+		if minutes[1] * 60 < v then
+			icon = self.icons[k]
 			break
 		end
 	end
 
-	return color .. " " .. minuteStr
+	return minuteStr, icon, true
 end
 
 
 function pollAndUpdate(self)
-	local result, icon= self:maybePoll()
+	local result, icon, showTitle= self:maybePoll()
 	-- logger.d("result", result, icon)
 
 	if icon then
@@ -124,18 +134,32 @@ function pollAndUpdate(self)
 		-- logger.d("set icon", path)
 		self.menubar:setIcon(path, false)
 		self.menubar:setTooltip(result)
-		self.menubar:setTitle("")
-	else
+		self.menubar:setTitle(nil)
+	end
+	if showTitle then
 		self.menubar:setTitle(result)
-		self.menubar:setIcon(nil)
-		self.menubar:setTooltip("Try to click me.")
+		self.menubar:setTooltip("Try to click me, try differently.")
 	end
 end
 
 function obj:init()
 	self.menubar = hs.menubar.new()
-	self.menubar:setClickCallback(function()
-		hs.execute("open https://www.bart.gov/schedules/stnsched/" .. self.orig)
+	self.menubar:setClickCallback(function(modifiers)
+		if modifiers["shift"] then
+			local url = "https://api.bart.gov/api/etd.aspx?" ..	table.concat({
+					"plat=" .. self.plat,
+					"dir=" .. self.dir,
+					"orig=" .. self.orig,
+					"key=" .. self.key,
+					"cmd=etd",
+					"json=y",
+				}, "&")
+
+			hs.execute("open '" .. url .. "'")
+
+		else
+			hs.execute("open https://www.bart.gov/schedules/stnsched/" .. self.orig)
+		end
 	end)
 	-- https://www.bart.gov/schedules/stnsched/MONT
 
@@ -157,5 +181,6 @@ function obj:stop()
 	self.menubar:delete()
 	self.menubar = nil
 end
+
 
 return obj
